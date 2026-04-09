@@ -1,0 +1,7 @@
+db:
+  user: postgres
+  password: password
+  host: localhost
+  db_name: postgres
+  port: 5432
+num_workers: 10
