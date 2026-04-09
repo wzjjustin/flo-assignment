@@ -29,6 +29,13 @@ This executable has 2 functionalities:
 
   > ./flo-assginment.exe clean
 
+### Clean up docker
+Run in terminal:
+> docker kill postgres
+
+> docker rm postgres
+
+
 
 ## 3. Questions
 ### Q1. What is the rationale for the technologies you have decided to use?
