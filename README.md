@@ -62,7 +62,12 @@ Answer:
 
 ### Q2. What would you have done differently if you had more time?
 Answer:
-> Spent more time reading and understanding the NEM12/13 documentation to possibly find more edge cases that I may have missed out during this assignment. There are many details in the documentation that were helpful in the implementation of this assignment. Some examples were the blocking cycle logic, the different fields to the values in each record that led me to validate interval data. Adding logic for the parsing of 400/500 records.
+> Spent more time reading and understanding the NEM12/13 documentation to possibly find more edge cases that I may have missed out during this assignment. There are many details in the documentation that were helpful in the implementation of this assignment. Some examples were the blocking cycle logic, the different fields to the values in each record that led me to validate interval data. 
+
+> Implementing more logic to handle specific scenarios, for example (refer to last point in readme - my ideal solution):
+>>1. Fail safe - The current implementation terminates all operation when a single occurence of error appears in the parser's flow. To mitigate the inefficiency of having to read all data from the start again in a separate instance, instead, an implementation that accepts data blocks (in chunks of type 200-500) which pass all the validation requirements (store them into db) and buffers the failures into a backup/retry file to attempt retry on a scheduled cronjob or via manual intiation after data rectification.
+>>2. Separate extraction from preprocessing stage -  the largest bottle neck of my implementation is the extraction stage as it handles both preprocessing and extraction, slowing down the process. Even with a pool of dynamic workers to pick up the transformation of data for loading, the preprocessing stage is currently read and processed via a single line scanner. In my ideal implementation, I would separate out the preprocessing stage and extraction stage into their individual operations. Preprocessing stage resolve issues such as file format incorrectness, allowing for the extraction stage to flow faster. While also enhancing the extractor pool to process in chunks of data in segments of 200-500 records. (interesting read: https://medium.com/swlh/processing-16gb-file-in-seconds-go-lang-3982c235dfa2)
+>>3. With multiple transformers to convert data into data we want to see in the DB, having more workers to handle the db storing/fail safe file creation will also help to speed up the entire parser's process. 
 
 ### Q3. What is the rationale for the design choices that you have made?
 Answer:
@@ -74,3 +79,5 @@ Answer:
 
 > Using tx.CreateInBatches() - this function generates a bulk insert [ example: INSERT INTO table(colA,colB) VALUES (a,b),(c,d)(e,f)...(y,z); ] which helps to reduce overhead when creating multiple records in DB.
 
+# My Ideal Solution
+<img width="1209" height="679" alt="Image" src="https://github.com/user-attachments/assets/4f86a531-e4c3-444c-8ffb-20fb92882525" />
