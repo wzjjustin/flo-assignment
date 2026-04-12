@@ -9,6 +9,7 @@ import (
 	"flo-assignment/src/model"
 	"flo-assignment/src/parser"
 	"fmt"
+	"hash"
 	"os"
 	"strings"
 	"sync"
@@ -16,29 +17,6 @@ import (
 
 	"gorm.io/gorm"
 )
-
-func (s *Service) processIntervalRecord(tx *gorm.DB, nmi string, intervalLength int, rec parser.IntervalRecord) error {
-	t, err := time.Parse("20060102", rec.Date)
-	if err != nil {
-		return fmt.Errorf("failed to parse date: %v", err)
-	}
-
-	toCreate := make([]model.MeterReading, len(rec.Values))
-	for i := range rec.Values {
-		toCreate[i] = model.MeterReading{
-			NMI:         nmi,
-			Timestamp:   t,
-			Consumption: rec.Values[i],
-		}
-		t = t.Add(time.Minute * time.Duration(intervalLength))
-	}
-	tx = tx.CreateInBatches(toCreate, len(rec.Values))
-	if tx.Error != nil {
-		return fmt.Errorf("failed to create in batch: %v", tx.Error)
-	}
-
-	return nil
-}
 
 type parseTask struct {
 	index      int
@@ -52,6 +30,7 @@ type parseResult struct {
 	err   error
 }
 
+// worker's method to handle parsing of records
 func (s *Service) parseWorker(tasks <-chan parseTask, results chan<- parseResult, wg *sync.WaitGroup) {
 	defer wg.Done()
 
@@ -59,6 +38,44 @@ func (s *Service) parseWorker(tasks <-chan parseTask, results chan<- parseResult
 		rec := parser.ParseRecord(task.recordType, task.raw)
 		results <- parseResult{index: task.index, rec: rec}
 	}
+}
+
+func (s *Service) processIntervalRecord(tx *gorm.DB, nmi string, intervalLength int, rec parser.IntervalRecord) error {
+	t, err := time.Parse(YYYYMMDDformat, rec.Date)
+	if err != nil {
+		return fmt.Errorf("failed to parse date in %s format: %v", YYYYMMDDformat, err)
+	}
+
+	intervalIncrement := parser.IntervalLengths[intervalLength]
+
+	toCreate := make([]model.MeterReading, len(rec.Values))
+	for i := range rec.Values {
+		toCreate[i] = model.MeterReading{
+			NMI:         nmi,
+			Timestamp:   t,
+			Consumption: rec.Values[i],
+		}
+		t = t.Add(intervalIncrement)
+	}
+
+	tx = tx.CreateInBatches(toCreate, len(rec.Values))
+	if tx.Error != nil {
+		return fmt.Errorf("failed to create in batch: %v", tx.Error)
+	}
+
+	return nil
+}
+
+func addToWriter(currentRecord *strings.Builder, line string, h hash.Hash) error {
+	if _, err := currentRecord.WriteString(line); err != nil {
+		return fmt.Errorf("failed to write to string builder: %v", err)
+	}
+
+	if _, err := h.Write([]byte(line)); err != nil {
+		return fmt.Errorf("failed to write to hash: %v", err)
+	}
+
+	return nil
 }
 
 func (s *Service) ProcessFileWithWorkers(ctx context.Context, path string) error {
@@ -83,7 +100,8 @@ func (s *Service) ProcessFileWithWorkers(ctx context.Context, path string) error
 	if err != nil {
 		return fmt.Errorf("failed to open file: %v", err)
 	}
-	defer file.Close()
+
+	defer file.Close() //nolint:errcheck
 
 	var (
 		scanner       = bufio.NewScanner(file)
@@ -91,40 +109,38 @@ func (s *Service) ProcessFileWithWorkers(ctx context.Context, path string) error
 		currentRecord strings.Builder
 		recordType    string
 		recordIndex   int
-		isHeaderFound bool
-		isEndFound    bool
 	)
-	scanner.Buffer(make([]byte, 64*1024), 1024*1024)
 
-	for scanner.Scan() {
+	scanner.Buffer(make([]byte, 64*1024), 1024*1024)
+	for scanner.Scan() { // defaulted to ScanLine()
 		line := scanner.Text()
 		fields := strings.Split(line, ",")
-		if parser.IsRecordStart(fields) {
-			switch fields[0] {
-			case parser.HEADER_RECORD_TYPE:
-				if isEndFound {
-					return fmt.Errorf("header not at top of file")
+		if len(fields) > 0 {
+			prevValidTypes, isRecord := validBlockCycleOrder[fields[0]]
+			if !isRecord { // if new token is not a record, add to current record and continue
+				if err := addToWriter(&currentRecord, line, h); err != nil {
+					return err
 				}
-				isHeaderFound = true
-			case parser.END_OF_DATA:
-				if !isHeaderFound {
-					return fmt.Errorf("header not at top of file")
-				}
-				isEndFound = true
-			default:
-				if !isHeaderFound {
-					return fmt.Errorf("header not at top of file")
-				}
+
+				continue
 			}
-			if currentRecord.Len() > 0 {
+
+			if _, isPrevValid := prevValidTypes[recordType]; !isPrevValid { // if new old record type does not path into new record type
+				return fmt.Errorf("blocking order is incorrect, new type = %s, want = %v", fields[0], prevValidTypes)
+			}
+
+			if currentRecord.Len() > 0 { // send preprocessed record for processing via worker
 				tasks <- parseTask{index: recordIndex, recordType: recordType, raw: currentRecord.String()}
 				recordIndex++
 			}
+
 			recordType = fields[0]
 			currentRecord.Reset()
 		}
-		currentRecord.WriteString(line)
-		h.Write(scanner.Bytes())
+
+		if err := addToWriter(&currentRecord, line, h); err != nil {
+			return err
+		}
 	}
 
 	if err := scanner.Err(); err != nil {
@@ -133,22 +149,21 @@ func (s *Service) ProcessFileWithWorkers(ctx context.Context, path string) error
 
 	if currentRecord.Len() > 0 {
 		tasks <- parseTask{index: recordIndex, recordType: recordType, raw: currentRecord.String()}
-		recordIndex++
 	}
 
-	close(tasks)
+	close(tasks) // closing tasks channel, indicating no new task data will be sent.
 
 	pending := make(map[int]parser.Record)
 	nextIndex := 0
 	currentNMI := ""
 	currentIntervalLength := 0
-	checkSum := hex.EncodeToString(h.Sum(nil))
+
 	err = s.db.Transaction(func(tx *gorm.DB) error {
-		result := tx.Create(&model.ProcessedFile{
-			Checksum: checkSum,
+		createResult := tx.Create(&model.ProcessedFile{
+			Checksum: hex.EncodeToString(h.Sum(nil)),
 		})
-		if errors.Is(result.Error, gorm.ErrDuplicatedKey) {
-			return fmt.Errorf("file was processed before: %v", result.Error)
+		if errors.Is(createResult.Error, gorm.ErrDuplicatedKey) {
+			return fmt.Errorf("file was processed before: %v", createResult.Error)
 		}
 
 		for res := range results {
@@ -181,7 +196,6 @@ func (s *Service) ProcessFileWithWorkers(ctx context.Context, path string) error
 					if err := s.processIntervalRecord(tx, currentNMI, currentIntervalLength, intervalRecord); err != nil {
 						return err
 					}
-				default:
 				}
 
 				delete(pending, nextIndex)

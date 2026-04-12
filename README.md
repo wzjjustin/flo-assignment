@@ -8,7 +8,7 @@
 ### Start up postgresql database  
 *ensure values are aligned to ~/config/config.yaml
 Run in terminal:
-> docker run --name postgres -e POSTGRES_PASSWORD=password -e POSTGRES_USER=postgres -e POSTGRES_DB=postgres -p 5432:5432 -d postgres
+> make start-db
 
 ### Build executable
 Change directory to project folder and run build command in terminal:
@@ -21,7 +21,8 @@ The flo-assignment.exe will be generated in the root folder
 ### Running the file parser
 This executable has 2 functionalities:
 1. Parse file example:
-  > ./flo-assignment.exe parse --filepath="test_data/<happy_flow_5>.csv"
+  > ./flo-assignment.exe parse --filepath="test_data/happy_flow_5.csv"
+  
 
 2. Clean up database
 -  Reason for clean up functionality is due to checksum implemented. To avoid same file from being processed twice, which will result in duplicated data with different UUIDs.
@@ -29,12 +30,17 @@ This executable has 2 functionalities:
 
   > ./flo-assginment.exe clean
 
+### Testing
+1. Unit test:
+  > make run-unit-test
+
+2. Functional test:
+  > make run-happy-flow
+  > make run-unhappy-flow
+
 ### Clean up docker
 Run in terminal:
-> docker kill postgres
-
-> docker rm postgres
-
+> make clean-db
 
 
 ## 3. Questions
@@ -59,4 +65,9 @@ Answer:
 
 > Auto-DB migration - reduce the need for users to perform an additional set just for db set up prior to running the program.
 
-> Using a dynamic worker pool - this splits up the load into multiple goroutines to run segments of operation concurrently while also allowing for efficient resource usage and scalability.
+> Using a dynamic worker pool - this splits up the load into multiple goroutines to run segments of operation concurrently while also allowing for efficient resource usage and scalability. 
+
+> Using tx.CreateInBatches() - this function generates a bulk insert [ example: INSERT INTO table(colA,colB) VALUES (a,b),(c,d)(e,f)...(y,z); ] which helps to reduce overhead when creating multiple records in DB.
+
+# Flow diagram
+<img width="1300" height="788" alt="Image" src="https://github.com/user-attachments/assets/02c89ab0-448e-4723-98f1-22ea41d69e4c" />

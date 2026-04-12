@@ -5,14 +5,17 @@ import (
 	"flo-assignment/src/service"
 	"fmt"
 	"log"
+	_ "net/http/pprof"
 	"os"
 
 	"github.com/urfave/cli/v3"
 )
 
 func main() {
-	var path string
-	var cfgPath string
+	var (
+		path    string
+		cfgPath string
+	)
 
 	cmd := cli.Command{
 		Commands: []*cli.Command{
@@ -37,14 +40,19 @@ func main() {
 				},
 				Action: func(ctx context.Context, cmd *cli.Command) error {
 					if path == "" {
-						return fmt.Errorf("file path is empty!")
+						return fmt.Errorf("file path is empty")
 					}
 					svc, err := service.NewService(cfgPath)
 					if err != nil {
 						return fmt.Errorf("failed to create service: %v", err)
 					}
 
-					return svc.ProcessFileWithWorkers(ctx, path)
+					err = svc.ProcessFileWithWorkers(ctx, path)
+					if err != nil {
+						return fmt.Errorf("failed to process file with workers: %v", err)
+					}
+
+					return nil
 				},
 			},
 			{

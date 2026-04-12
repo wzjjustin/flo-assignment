@@ -1,2 +1,6 @@
 *.exe
-~/.vscode/*
+**/.vscode/
+*.out
+*.prof
+~/tmp/*
+launch.json
