@@ -1,6 +1,10 @@
 # Flo Energy Tech Assessment by Justin Wong (wzjjustin@gmail.com)
 ---
 *Disclaimer: Assessment was done on Windows 10*
+
+# Flow diagram
+<img width="1300" height="788" alt="Image" src="https://github.com/user-attachments/assets/02c89ab0-448e-4723-98f1-22ea41d69e4c" />
+
 ## 1. Pre-requisites
   - Docker (v28.0.4 Installed) 
   - Golang (v1.25.0+)
@@ -36,6 +40,7 @@ This executable has 2 functionalities:
 
 2. Functional test:
   > make run-happy-flow
+
   > make run-unhappy-flow
 
 ### Clean up docker
@@ -69,5 +74,3 @@ Answer:
 
 > Using tx.CreateInBatches() - this function generates a bulk insert [ example: INSERT INTO table(colA,colB) VALUES (a,b),(c,d)(e,f)...(y,z); ] which helps to reduce overhead when creating multiple records in DB.
 
-# Flow diagram
-<img width="1300" height="788" alt="Image" src="https://github.com/user-attachments/assets/02c89ab0-448e-4723-98f1-22ea41d69e4c" />
