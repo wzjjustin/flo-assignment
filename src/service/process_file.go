@@ -86,6 +86,7 @@ func (s *Service) ProcessFileWithWorkers(ctx context.Context, path string) error
 		wg         sync.WaitGroup
 	)
 
+	// initiate worker pool
 	for i := 0; i < numWorkers; i++ {
 		wg.Add(1)
 		go s.parseWorker(tasks, results, &wg)
@@ -96,6 +97,7 @@ func (s *Service) ProcessFileWithWorkers(ctx context.Context, path string) error
 		close(results)
 	}()
 
+	// open file
 	file, err := os.Open(path)
 	if err != nil {
 		return fmt.Errorf("failed to open file: %v", err)
@@ -112,10 +114,12 @@ func (s *Service) ProcessFileWithWorkers(ctx context.Context, path string) error
 	)
 
 	scanner.Buffer(make([]byte, 64*1024), 1024*1024)
+	// read each line till EOF
 	for scanner.Scan() { // defaulted to ScanLine()
 		line := scanner.Text()
 		fields := strings.Split(line, ",")
 		if len(fields) > 0 {
+			// validate block cycle order
 			prevValidTypes, isRecord := validBlockCycleOrder[fields[0]]
 			if !isRecord { // if new token is not a record, add to current record and continue
 				if err := addToWriter(&currentRecord, line, h); err != nil {
@@ -129,15 +133,18 @@ func (s *Service) ProcessFileWithWorkers(ctx context.Context, path string) error
 				return fmt.Errorf("blocking order is incorrect, new type = %s, want = %v", fields[0], prevValidTypes)
 			}
 
+			// submit data for processing if any
 			if currentRecord.Len() > 0 { // send preprocessed record for processing via worker
 				tasks <- parseTask{index: recordIndex, recordType: recordType, raw: currentRecord.String()}
 				recordIndex++
 			}
 
+			// clean up current record to be added in addToWriter() outside of if-statment
 			recordType = fields[0]
 			currentRecord.Reset()
 		}
 
+		// append current record
 		if err := addToWriter(&currentRecord, line, h); err != nil {
 			return err
 		}
@@ -146,7 +153,7 @@ func (s *Service) ProcessFileWithWorkers(ctx context.Context, path string) error
 	if err := scanner.Err(); err != nil {
 		return fmt.Errorf("scan error: %v", err)
 	}
-
+	// send 'end' data for processing (900 type)
 	if currentRecord.Len() > 0 {
 		tasks <- parseTask{index: recordIndex, recordType: recordType, raw: currentRecord.String()}
 	}
@@ -159,6 +166,7 @@ func (s *Service) ProcessFileWithWorkers(ctx context.Context, path string) error
 	currentIntervalLength := 0
 
 	err = s.db.Transaction(func(tx *gorm.DB) error {
+		// create a file-processed record to ensure no duplicated processing of same file
 		createResult := tx.Create(&model.ProcessedFile{
 			Checksum: hex.EncodeToString(h.Sum(nil)),
 		})
@@ -166,13 +174,15 @@ func (s *Service) ProcessFileWithWorkers(ctx context.Context, path string) error
 			return fmt.Errorf("file was processed before: %v", createResult.Error)
 		}
 
+		// check for channel buffer for results from processing
 		for res := range results {
 			if res.err != nil {
 				return res.err
 			}
+			// perform index to maintain block of 200-500 order
 			pending[res.index] = res.rec
 
-			for {
+			for { // process in order of index to ensure nmi is correct for records
 				rec, ok := pending[nextIndex]
 				if !ok {
 					break

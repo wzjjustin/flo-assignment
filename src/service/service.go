@@ -23,12 +23,16 @@ func NewService(cfgPath string) (*Service, error) {
 
 	serviceConfig := &Config{}
 	if err = yaml.Unmarshal(cfgFile, serviceConfig); err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to unmarshal config file, %v", err)
+	}
+
+	if serviceConfig.NumWorkers <= 0 {
+		return nil, fmt.Errorf("invalid num_workers in %s: %d", cfgPath, serviceConfig.NumWorkers)
 	}
 
 	db, err := gorm.Open(postgres.Open(buildURI(serviceConfig.DBConfig)), &gorm.Config{})
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to connect to db: %v", err)
 	}
 
 	result := db.Exec(`CREATE EXTENSION IF NOT EXISTS "uuid-ossp";`) // to fix uuid_generate_v4() does not exist on postgresql
@@ -37,7 +41,7 @@ func NewService(cfgPath string) (*Service, error) {
 	}
 
 	if err = db.AutoMigrate(model.MeterReading{}, model.ProcessedFile{}); err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to auto migrate models: %v", err)
 	}
 
 	return &Service{
