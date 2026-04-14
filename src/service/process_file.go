@@ -160,15 +160,19 @@ func (s *Service) ProcessFileWithWorkers(ctx context.Context, path string) error
 
 	close(tasks) // closing tasks channel, indicating no new task data will be sent.
 
+	return s.LoadDataToDB(hex.EncodeToString(h.Sum(nil)), results)
+}
+
+func (s *Service) LoadDataToDB(checkSum string, results <-chan parseResult) error {
 	pending := make(map[int]parser.Record)
 	nextIndex := 0
 	currentNMI := ""
 	currentIntervalLength := 0
 
-	err = s.db.Transaction(func(tx *gorm.DB) error {
+	err := s.db.Transaction(func(tx *gorm.DB) error {
 		// create a file-processed record to ensure no duplicated processing of same file
 		createResult := tx.Create(&model.ProcessedFile{
-			Checksum: hex.EncodeToString(h.Sum(nil)),
+			Checksum: checkSum,
 		})
 		if errors.Is(createResult.Error, gorm.ErrDuplicatedKey) {
 			return fmt.Errorf("file was processed before: %v", createResult.Error)

@@ -1,3 +1,6 @@
+# github.com/DATA-DOG/go-sqlmock v1.5.2
+## explicit; go 1.15
+github.com/DATA-DOG/go-sqlmock
 # github.com/davecgh/go-spew v1.1.1
 ## explicit
 github.com/davecgh/go-spew/spew
@@ -45,6 +48,8 @@ github.com/pmezard/go-difflib/difflib
 ## explicit; go 1.17
 github.com/stretchr/testify/assert
 github.com/stretchr/testify/assert/yaml
+github.com/stretchr/testify/require
+github.com/stretchr/testify/suite
 # github.com/urfave/cli/v3 v3.8.0
 ## explicit; go 1.22
 github.com/urfave/cli/v3
